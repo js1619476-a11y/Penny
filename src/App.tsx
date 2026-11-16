@@ -41,7 +41,7 @@ import {
   getCurrentDateString,
   getCurrentMonthKey,
 } from './utils/finance';
-import { NAV_ITEMS, Sidebar } from './components/Sidebar';
+import { Sidebar } from './components/Sidebar';
 import { SignInScreen } from './components/SignInScreen';
 import { OverviewView } from './components/OverviewView';
 import { TransactionsView } from './components/TransactionsView';
@@ -517,37 +517,6 @@ export default function App() {
               </button>
             </div>
           </div>
-
-          <nav
-            aria-label="Top navigation"
-            className="lg:hidden max-w-6xl mx-auto mt-2.5 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-1.5"
-          >
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveView(item.id)}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${
-                    isActive
-                      ? 'bg-teal-50 text-teal-800 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <Icon
-                    className={`w-3.5 h-3.5 shrink-0 ${
-                      isActive ? 'text-teal-700' : 'text-slate-400'
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
         </header>
 
         {/* Main Content Viewport */}
