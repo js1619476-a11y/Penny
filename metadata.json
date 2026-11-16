@@ -1,0 +1,6 @@
+{
+  "name": "Penny",
+  "description": "Penny — Your Money, Made Simple. An approachable personal finance companion for tracking income, expenses, budgets, and savings goals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

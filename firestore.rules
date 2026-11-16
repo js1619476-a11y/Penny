@@ -1,0 +1,243 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable hardened primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function parentUserExists(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function isValidCurrency(val) {
+      return val is string && val in ['USD', 'GBP', 'EUR'];
+    }
+
+    function isValidDateString(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidTransactionCategory(val) {
+      return val is string && val in [
+        'groceries', 'dining', 'housing', 'utilities', 'transport',
+        'shopping', 'health', 'leisure', 'savings',
+        'salary', 'freelance', 'gifts'
+      ];
+    }
+
+    function isValidExpenseCategory(val) {
+      return val is string && val in [
+        'groceries', 'dining', 'housing', 'utilities', 'transport',
+        'shopping', 'health', 'leisure', 'savings'
+      ];
+    }
+
+    function isValidGoalColor(val) {
+      return val is string && val in ['#0D9488', '#7C3AED', '#0284C7', '#059669', '#D97706'];
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'currency', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'currency', 'createdAt', 'updatedAt'])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.uid == userId
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 120
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 254
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && isValidCurrency(data.currency)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data, userId) {
+      return data.keys().hasAll(['ownerId', 'description', 'amount', 'type', 'category', 'date', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'description', 'amount', 'type', 'category', 'date', 'note', 'createdAt', 'updatedAt'])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId == userId
+        && data.description is string
+        && data.description.size() >= 1
+        && data.description.size() <= 120
+        && (data.amount is int || data.amount is float)
+        && data.amount > 0
+        && data.amount <= 100000000
+        && data.type is string
+        && data.type in ['income', 'expense']
+        && isValidTransactionCategory(data.category)
+        && isValidDateString(data.date)
+        && (!('note' in data) || (data.note is string && data.note.size() <= 240))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBudget(data, userId) {
+      return data.keys().hasAll(['ownerId', 'category', 'limit', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'category', 'limit', 'createdAt', 'updatedAt'])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId == userId
+        && isValidExpenseCategory(data.category)
+        && (data.limit is int || data.limit is float)
+        && data.limit > 0
+        && data.limit <= 100000000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSavingsGoal(data, userId) {
+      return data.keys().hasAll(['ownerId', 'name', 'targetAmount', 'currentAmount', 'targetDate', 'color', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'name', 'targetAmount', 'currentAmount', 'targetDate', 'note', 'color', 'createdAt', 'updatedAt'])
+        && data.ownerId is string
+        && data.ownerId == request.auth.uid
+        && data.ownerId == userId
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 100
+        && (data.targetAmount is int || data.targetAmount is float)
+        && data.targetAmount > 0
+        && data.targetAmount <= 100000000
+        && (data.currentAmount is int || data.currentAmount is float)
+        && data.currentAmount >= 0
+        && data.currentAmount <= 100000000
+        && isValidDateString(data.targetDate)
+        && (!('note' in data) || (data.note is string && data.note.size() <= 240))
+        && isValidGoalColor(data.color)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // User profile documents (PII isolated to owner only; never listable)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isVerifiedUser()
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isVerifiedUser()
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['currency', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'photoURL', 'updatedAt'])
+        );
+      allow delete: if false;
+
+      // User's private transactions
+      match /transactions/{transactionId} {
+        allow get: if isValidId(userId) && isValidId(transactionId) && isOwner(userId) && parentUserExists(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(transactionId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidTransaction(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+        allow update: if isValidId(userId)
+          && isValidId(transactionId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidTransaction(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'amount', 'type', 'category', 'date', 'note', 'updatedAt'])
+          && parentUserExists(userId);
+        allow delete: if isValidId(userId) && isValidId(transactionId) && isVerifiedUser() && isOwner(userId) && parentUserExists(userId);
+      }
+
+      // User's private budgets
+      match /budgets/{budgetId} {
+        allow get: if isValidId(userId) && isValidId(budgetId) && isOwner(userId) && parentUserExists(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(budgetId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidBudget(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+        allow update: if isValidId(userId)
+          && isValidId(budgetId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidBudget(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'limit', 'updatedAt'])
+          && parentUserExists(userId);
+        allow delete: if isValidId(userId) && isValidId(budgetId) && isVerifiedUser() && isOwner(userId) && parentUserExists(userId);
+      }
+
+      // User's private savings goals
+      match /goals/{goalId} {
+        allow get: if isValidId(userId) && isValidId(goalId) && isOwner(userId) && parentUserExists(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(goalId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidSavingsGoal(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+        allow update: if isValidId(userId)
+          && isValidId(goalId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidSavingsGoal(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['currentAmount', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'targetAmount', 'currentAmount', 'targetDate', 'note', 'color', 'updatedAt'])
+          )
+          && parentUserExists(userId);
+        allow delete: if isValidId(userId) && isValidId(goalId) && isVerifiedUser() && isOwner(userId) && parentUserExists(userId);
+      }
+    }
+  }
+}

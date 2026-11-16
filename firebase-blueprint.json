@@ -1,0 +1,242 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private personal finance profile for an authenticated Google user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the profile owner."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "User display name from Google profile."
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 254,
+          "description": "Verified email address of the profile owner."
+        },
+        "photoURL": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Optional avatar URL from Google profile."
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["USD", "GBP", "EUR"],
+          "description": "Preferred display currency code."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated."
+        }
+      },
+      "required": ["uid", "displayName", "email", "currency", "createdAt", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "An income or expense entry belonging to a specific user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the user who owns this transaction."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Short human-readable description of the transaction."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Positive monetary amount."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense"],
+          "description": "Whether the entry is money in or money out."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "groceries",
+            "dining",
+            "housing",
+            "utilities",
+            "transport",
+            "shopping",
+            "health",
+            "leisure",
+            "savings",
+            "salary",
+            "freelance",
+            "gifts"
+          ],
+          "description": "Spending or income category identifier."
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Transaction date in YYYY-MM-DD format."
+        },
+        "note": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240,
+          "description": "Optional short note."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated."
+        }
+      },
+      "required": ["ownerId", "description", "amount", "type", "category", "date", "createdAt", "updatedAt"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "A monthly category spending limit belonging to a specific user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the user who owns this budget."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "groceries",
+            "dining",
+            "housing",
+            "utilities",
+            "transport",
+            "shopping",
+            "health",
+            "leisure",
+            "savings"
+          ],
+          "description": "Expense category identifier."
+        },
+        "limit": {
+          "type": "number",
+          "description": "Positive monthly spending limit."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated."
+        }
+      },
+      "required": ["ownerId", "category", "limit", "createdAt", "updatedAt"]
+    },
+    "SavingsGoal": {
+      "title": "SavingsGoal",
+      "description": "A personal savings goal belonging to a specific user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the user who owns this savings goal."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Friendly name of the savings goal."
+        },
+        "targetAmount": {
+          "type": "number",
+          "description": "Positive target savings amount."
+        },
+        "currentAmount": {
+          "type": "number",
+          "description": "Non-negative amount saved so far."
+        },
+        "targetDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Target date in YYYY-MM-DD format."
+        },
+        "note": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 240,
+          "description": "Optional motivation note."
+        },
+        "color": {
+          "type": "string",
+          "enum": ["#0D9488", "#7C3AED", "#0284C7", "#059669", "#D97706"],
+          "description": "Hex accent color for the goal progress bar."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated."
+        }
+      },
+      "required": ["ownerId", "name", "targetAmount", "currentAmount", "targetDate", "color", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores each Google-authenticated user's separate Penny profile and currency preference."
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Stores income and expense entries private to the owning user."
+    },
+    "/users/{userId}/budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/Budget" },
+      "description": "Stores monthly spending limits private to the owning user."
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/SavingsGoal" },
+      "description": "Stores personal savings goals private to the owning user."
+    }
+  }
+}
