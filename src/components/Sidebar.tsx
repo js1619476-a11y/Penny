@@ -4,6 +4,7 @@ import {
   PieChart,
   Target,
   TrendingUp,
+  LogIn,
   LogOut,
   X,
 } from 'lucide-react';
@@ -13,6 +14,9 @@ interface SidebarProps {
   activeView: ViewId;
   onSelectView: (view: ViewId) => void;
   userProfile: UserProfile;
+  isGuestMode?: boolean;
+  isSigningIn?: boolean;
+  onSignIn?: () => void;
   onCurrencyChange: (currency: CurrencyCode) => void;
   onSignOut: () => void;
   isOpenMobile: boolean;
@@ -31,6 +35,9 @@ export function Sidebar({
   activeView,
   onSelectView,
   userProfile,
+  isGuestMode = false,
+  isSigningIn = false,
+  onSignIn,
   onCurrencyChange,
   onSignOut,
   isOpenMobile,
@@ -148,14 +155,36 @@ export function Sidebar({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-            <span>Sign out</span>
-          </button>
+          {isGuestMode && onSignIn ? (
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={onSignIn}
+                disabled={isSigningIn}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{isSigningIn ? 'Signing in...' : 'Sign in with Google'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                <span>Back to welcome screen</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+              <span>Sign out</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

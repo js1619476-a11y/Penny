@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Menu, Plus } from 'lucide-react';
-import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  type User,
+} from 'firebase/auth';
 import { auth, googleProvider } from './firebase/config';
 import {
   contributeToGoalDoc,
@@ -41,6 +48,20 @@ import {
   getCurrentDateString,
   getCurrentMonthKey,
 } from './utils/finance';
+import {
+  contributeLocalGoal,
+  loadLocalFinanceState,
+  readGuestModeFlag,
+  removeLocalBudget,
+  removeLocalGoal,
+  removeLocalTransaction,
+  saveLocalFinanceState,
+  upsertLocalBudget,
+  upsertLocalGoal,
+  upsertLocalTransaction,
+  writeGuestModeFlag,
+  type LocalFinanceState,
+} from './utils/localStore';
 import { Sidebar } from './components/Sidebar';
 import { SignInScreen } from './components/SignInScreen';
 import { OverviewView } from './components/OverviewView';
@@ -67,6 +88,18 @@ export default function App() {
 
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [isGuestMode, setIsGuestMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('autostart') === '1' || params.get('guest') === '1') {
+        return true;
+      }
+    }
+    return readGuestModeFlag();
+  });
+  const [localState, setLocalState] = useState<LocalFinanceState>(() =>
+    loadLocalFinanceState()
+  );
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -100,12 +133,35 @@ export default function App() {
 
   const [contributingGoal, setContributingGoal] = useState<SavingsGoal | null>(null);
 
+  // Persist guest local finance state whenever it changes
+  useEffect(() => {
+    saveLocalFinanceState(localState);
+  }, [localState]);
+
+  // Complete Google redirect sign-in if returning from mobile/popup-blocked redirect
+  useEffect(() => {
+    getRedirectResult(auth).catch((error) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('unauthorized-domain')) {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        setAuthError(
+          `Sign-in is not authorized for "${host}" yet. Add "${host}" under Firebase Console -> Authentication -> Settings -> Authorized domains, or click "Open without signing in".`
+        );
+      } else if (!msg.includes('popup-closed-by-user')) {
+        setAuthError('Could not complete Google Sign-In. You can still open Penny without signing in.');
+      }
+    });
+  }, []);
+
   // Listen for Firebase Auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthUser(user);
       setAuthReady(true);
-      if (!user) {
+      if (user) {
+        setIsGuestMode(false);
+        writeGuestModeFlag(false);
+      } else {
         setUserProfile(null);
         setTransactions([]);
         setBudgets([]);
@@ -199,11 +255,16 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [statusNotice]);
 
-  const currency: CurrencyCode = userProfile?.currency ?? 'USD';
+  const activeTransactions = authUser ? transactions : localState.transactions;
+  const activeBudgets = authUser ? budgets : localState.budgets;
+  const activeGoals = authUser ? goals : localState.goals;
+  const currency: CurrencyCode = authUser
+    ? userProfile?.currency ?? 'USD'
+    : localState.currency;
 
   const availableMonths = useMemo(
-    () => getAvailableMonths(transactions, currentMonthKey),
-    [transactions, currentMonthKey]
+    () => getAvailableMonths(activeTransactions, currentMonthKey),
+    [activeTransactions, currentMonthKey]
   );
 
   const fullFilters: TransactionFilters = useMemo(
@@ -213,72 +274,81 @@ export default function App() {
 
   const monthScopedTransactions = useMemo(
     () =>
-      filterTransactions(transactions, {
+      filterTransactions(activeTransactions, {
         monthKey: selectedMonth,
         search: '',
         type: 'all',
         category: 'all',
       }),
-    [transactions, selectedMonth]
+    [activeTransactions, selectedMonth]
   );
 
   const filteredTransactions = useMemo(
-    () => filterTransactions(transactions, fullFilters),
-    [transactions, fullFilters]
+    () => filterTransactions(activeTransactions, fullFilters),
+    [activeTransactions, fullFilters]
   );
 
   const allTimeBalance = useMemo(
-    () => computeAllTimeBalance(transactions),
-    [transactions]
+    () => computeAllTimeBalance(activeTransactions),
+    [activeTransactions]
   );
 
   const monthlySummary = useMemo(
-    () => computeMonthlySummary(transactions, selectedMonth),
-    [transactions, selectedMonth]
+    () => computeMonthlySummary(activeTransactions, selectedMonth),
+    [activeTransactions, selectedMonth]
   );
 
   const categoryBreakdown = useMemo(
-    () => computeCategoryBreakdown(transactions, selectedMonth),
-    [transactions, selectedMonth]
+    () => computeCategoryBreakdown(activeTransactions, selectedMonth),
+    [activeTransactions, selectedMonth]
   );
 
   const budgetProgress = useMemo(
     () =>
       computeBudgetProgress(
-        budgets,
-        transactions,
+        activeBudgets,
+        activeTransactions,
         selectedMonth === 'all' ? currentMonthKey : selectedMonth
       ),
-    [budgets, transactions, selectedMonth, currentMonthKey]
+    [activeBudgets, activeTransactions, selectedMonth, currentMonthKey]
   );
 
   const goalProgress = useMemo(
-    () => goals.map(computeGoalProgress),
-    [goals]
+    () => activeGoals.map(computeGoalProgress),
+    [activeGoals]
   );
 
   const sixMonthTrend = useMemo(
     () =>
       computeSixMonthTrend(
-        transactions,
+        activeTransactions,
         selectedMonth === 'all' ? currentMonthKey : selectedMonth
       ),
-    [transactions, selectedMonth, currentMonthKey]
+    [activeTransactions, selectedMonth, currentMonthKey]
   );
 
   const insights = useMemo(
     () =>
       generatePlainInsights(
-        transactions,
-        budgets,
-        goals,
+        activeTransactions,
+        activeBudgets,
+        activeGoals,
         selectedMonth,
         currency
       ),
-    [transactions, budgets, goals, selectedMonth, currency]
+    [activeTransactions, activeBudgets, activeGoals, selectedMonth, currency]
   );
 
-  // Auth handlers
+  // Auth and guest handlers
+  const handleContinueGuest = () => {
+    setAuthError(null);
+    setErrorBanner(null);
+    setIsGuestMode(true);
+    writeGuestModeFlag(true);
+    setActiveView('overview');
+    setSelectedMonth(getCurrentMonthKey());
+  };
+
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
     setAuthError(null);
@@ -288,12 +358,25 @@ export default function App() {
       setSelectedMonth(getCurrentMonthKey());
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('popup-closed-by-user')) {
-        setAuthError('Sign-in was canceled before finishing. Click Sign in with Google whenever you are ready.');
-      } else if (msg.includes('popup-blocked')) {
-        setAuthError('Your browser blocked the sign-in popup. Please allow popups for this site and try again.');
+      if (
+        msg.includes('popup-blocked') ||
+        msg.includes('operation-not-supported-in-this-environment')
+      ) {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch {
+          setAuthError('Your browser blocked the sign-in popup. Please allow popups or click "Open without signing in".');
+        }
+      } else if (msg.includes('popup-closed-by-user')) {
+        setAuthError('Sign-in was canceled before finishing. You can try again or open without signing in.');
+      } else if (msg.includes('unauthorized-domain')) {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        setAuthError(
+          `Sign-in is not authorized for "${host}" yet. Add "${host}" under Firebase Console -> Authentication -> Settings -> Authorized domains, or click "Open without signing in".`
+        );
       } else {
-        setAuthError('Could not sign in with Google right now. Please try again.');
+        setAuthError('Could not sign in with Google right now. You can try again or open without signing in.');
       }
     } finally {
       setIsSigningIn(false);
@@ -301,8 +384,18 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
+    if (!authUser) {
+      setIsGuestMode(false);
+      writeGuestModeFlag(false);
+      setStatusNotice(null);
+      setErrorBanner(null);
+      setActiveView('overview');
+      return;
+    }
     try {
       await signOut(auth);
+      setIsGuestMode(false);
+      writeGuestModeFlag(false);
       setStatusNotice(null);
       setErrorBanner(null);
       setActiveView('overview');
@@ -311,13 +404,17 @@ export default function App() {
     }
   };
 
-  // Firestore mutation handlers
+  // Persistence mutation handlers (Firestore when signed in, local browser storage in guest mode)
   const handleSaveTransaction = async (
     payload: Omit<Transaction, 'id' | 'createdAtMs'>,
     existingId?: string
   ) => {
-    if (!authUser) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) => upsertLocalTransaction(prev, payload, existingId));
+      setStatusNotice(existingId ? 'Transaction updated.' : 'Transaction saved on this device.');
+      return;
+    }
     try {
       await saveTransactionDoc(authUser.uid, payload, existingId);
       setStatusNotice(existingId ? 'Transaction updated.' : 'Transaction saved.');
@@ -327,8 +424,12 @@ export default function App() {
   };
 
   const handleDeleteTransaction = async (tx: Transaction) => {
-    if (!authUser) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) => removeLocalTransaction(prev, tx.id));
+      setStatusNotice(`Removed "${tx.description}".`);
+      return;
+    }
     try {
       await deleteTransactionDoc(authUser.uid, tx.id);
       setStatusNotice(`Removed "${tx.description}".`);
@@ -342,8 +443,12 @@ export default function App() {
     limit: number,
     existingId?: string
   ) => {
-    if (!authUser) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) => upsertLocalBudget(prev, category, limit, existingId));
+      setStatusNotice(existingId ? 'Budget updated.' : 'Monthly budget saved on this device.');
+      return;
+    }
     try {
       await saveBudgetDoc(authUser.uid, category, limit, existingId);
       setStatusNotice(existingId ? 'Budget updated.' : 'Monthly budget saved.');
@@ -353,8 +458,12 @@ export default function App() {
   };
 
   const handleDeleteBudget = async (budget: Budget) => {
-    if (!authUser) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) => removeLocalBudget(prev, budget.id));
+      setStatusNotice('Budget removed.');
+      return;
+    }
     try {
       await deleteBudgetDoc(authUser.uid, budget.id);
       setStatusNotice('Budget removed.');
@@ -367,8 +476,12 @@ export default function App() {
     payload: Omit<SavingsGoal, 'id'>,
     existingId?: string
   ) => {
-    if (!authUser) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) => upsertLocalGoal(prev, payload, existingId));
+      setStatusNotice(existingId ? 'Savings goal updated.' : 'Savings goal created on this device.');
+      return;
+    }
     try {
       await saveGoalDoc(authUser.uid, payload, existingId);
       setStatusNotice(existingId ? 'Savings goal updated.' : 'Savings goal created.');
@@ -378,8 +491,12 @@ export default function App() {
   };
 
   const handleDeleteGoal = async (goal: SavingsGoal) => {
-    if (!authUser) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) => removeLocalGoal(prev, goal.id));
+      setStatusNotice(`Removed goal "${goal.name}".`);
+      return;
+    }
     try {
       await deleteGoalDoc(authUser.uid, goal.id);
       setStatusNotice(`Removed goal "${goal.name}".`);
@@ -393,10 +510,16 @@ export default function App() {
     amount: number,
     alsoLogTransaction: boolean
   ) => {
-    if (!authUser) return;
-    const targetGoal = goals.find((g) => g.id === goalId);
+    const targetGoal = activeGoals.find((g) => g.id === goalId);
     if (!targetGoal) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) =>
+        contributeLocalGoal(prev, goalId, amount, alsoLogTransaction, currentDateStr)
+      );
+      setStatusNotice(`Added savings to "${targetGoal.name}".`);
+      return;
+    }
     try {
       await contributeToGoalDoc(
         authUser.uid,
@@ -412,8 +535,11 @@ export default function App() {
   };
 
   const handleCurrencyChange = async (nextCurrency: CurrencyCode) => {
-    if (!authUser) return;
     setErrorBanner(null);
+    if (!authUser) {
+      setLocalState((prev) => ({ ...prev, currency: nextCurrency }));
+      return;
+    }
     try {
       await updateProfileCurrency(authUser.uid, nextCurrency);
     } catch {
@@ -421,7 +547,7 @@ export default function App() {
     }
   };
 
-  if (!authReady) {
+  if (!authReady && !isGuestMode) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="text-center space-y-2">
@@ -434,25 +560,33 @@ export default function App() {
     );
   }
 
-  if (!authUser) {
+  if (!authUser && !isGuestMode) {
     return (
       <SignInScreen
         onSignIn={handleGoogleSignIn}
+        onContinueGuest={handleContinueGuest}
         isSigningIn={isSigningIn}
         errorMessage={authError}
       />
     );
   }
 
-  const activeProfile: UserProfile = userProfile ?? {
-    uid: authUser.uid,
-    displayName: authUser.displayName || authUser.email?.split('@')[0] || 'Penny User',
-    email: authUser.email || '',
-    photoURL: authUser.photoURL || undefined,
-    currency: 'USD',
-  };
+  const activeProfile: UserProfile = authUser
+    ? userProfile ?? {
+        uid: authUser.uid,
+        displayName: authUser.displayName || authUser.email?.split('@')[0] || 'Penny User',
+        email: authUser.email || '',
+        photoURL: authUser.photoURL || undefined,
+        currency: 'USD',
+      }
+    : {
+        uid: 'guest-device',
+        displayName: 'Guest',
+        email: 'Saved on this device',
+        currency: localState.currency,
+      };
 
-  const userFirstName = activeProfile.displayName.split(' ')[0] || 'Your';
+  const userFirstName = activeProfile.displayName.split(' ')[0] || 'Guest';
 
   return (
     <div className="min-h-screen flex bg-slate-50 text-slate-900">
@@ -460,6 +594,9 @@ export default function App() {
         activeView={activeView}
         onSelectView={setActiveView}
         userProfile={activeProfile}
+        isGuestMode={!authUser}
+        isSigningIn={isSigningIn}
+        onSignIn={handleGoogleSignIn}
         onCurrencyChange={handleCurrencyChange}
         onSignOut={handleSignOut}
         isOpenMobile={mobileNavOpen}
@@ -555,7 +692,7 @@ export default function App() {
               </div>
             )}
 
-            {dataLoading ? (
+            {dataLoading && authUser ? (
               <div className="space-y-4" aria-busy="true" aria-label="Loading your profile">
                 <div className="h-44 rounded-2xl bg-white border border-slate-200 animate-pulse" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -587,7 +724,7 @@ export default function App() {
                       setTxModalOpen(true);
                     }}
                     onContributeGoal={(goalId) => {
-                      const found = goals.find((g) => g.id === goalId);
+                      const found = activeGoals.find((g) => g.id === goalId);
                       if (found) setContributingGoal(found);
                     }}
                   />
@@ -596,7 +733,7 @@ export default function App() {
                 {activeView === 'transactions' && (
                   <TransactionsView
                     transactions={filteredTransactions}
-                    allTransactionsCount={transactions.length}
+                    allTransactionsCount={activeTransactions.length}
                     filters={fullFilters}
                     currency={currency}
                     onFiltersChange={(next) => {
@@ -684,7 +821,7 @@ export default function App() {
       <BudgetModal
         isOpen={budgetModalOpen}
         initialBudget={editingBudget}
-        existingCategories={budgets.map((b) => b.category)}
+        existingCategories={activeBudgets.map((b) => b.category)}
         onClose={() => {
           setBudgetModalOpen(false);
           setEditingBudget(null);
